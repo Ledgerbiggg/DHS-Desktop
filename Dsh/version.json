@@ -1,5 +1,5 @@
 {
-    "version": "0.1.0",
-    "notes": "DeepSeek 桌面客户端首版：内嵌 WebView2 加载本地服务，支持快捷键呼出/隐藏与开机自启。",
+    "version": "0.1.1",
+    "notes": "## v0.1.1 更新说明\n> 生成时间：2026-09-06\n\n### ✨ 新功能\n- 新增 DeepSeek harness 重启按钮：确认后终止并重新运行本地服务，页面自动重新加载\n- 移除冗余的网页刷新按钮\n\n### 🐛 问题修复\n- 修复应用退出 / 托盘退出 / 升级安装 / 进程崩溃时未终止 dsh web 后台进程，导致 3080 端口残留的问题\n- 修复 WPF 无边框窗口内嵌 WebView2 后边缘无法拖拽缩放的问题（内容区边缘留出 8px 交给 WPF 命中）\n\n### 🧹 杂项\n- 引入 DshHostService 托管本地服务进程生命周期（含 Job Object 兜底回收）\n- 新增主题服务、消息框助手、开发热重载脚本、README 与文档/截图\n\n共 2 条提交。",
     "url": "https://github.com/Ledgerbiggg/DHS-Desktop/releases/latest"
 }
