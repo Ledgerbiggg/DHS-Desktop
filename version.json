@@ -1,5 +1,5 @@
 {
-    "version":  "0.2.0",
-    "notes":  "## v0.2.0 更新说明\r\n\u003e 生成时间：2026-09-06\r\n\r\n### ✨ 新功能\r\n- 设置新增「静默启动」开关：开启后启动仅驻留系统托盘，主窗口零闪现、完全不加载渲染，WebView2 推迟到首次唤出时才初始化\r\n- 静默驻留期间托盘双击、全局热键、二次启动均可正常唤出主窗口\r\n\r\n### 🐛 问题修复\r\n- 修复勾选静默启动后仍弹窗：Prism 在 OnInitialized 中的 MainWindow.Show() 未被拦截\r\n- 修复窗口句柄创建瞬间闪现：EnsureHandle 前未压 Visibility=Hidden，CreateWindowEx 仍带 WS_VISIBLE 样式\r\n- 修复静默驻留时二次启动无法唤出：窗口未布局导致 HWND 标题为空，FindWindow 匹配失败\r\n\r\n### 🔧 调整\r\n- 增强 git 钩子乱码拦截：pre-commit 修复子 shell 逃逸缺陷，commit-msg 新增双重转码乱码字符构成检测",
+    "version":  "0.2.1",
+    "notes":  "## v0.2.1 更新说明\n\u003e 生成时间：2026-09-06\n\n### 🐛 问题修复\n- 修复设置窗口「检查更新」点击后看不到结果：状态文本此前绑定 IsBusy，检查一结束就被隐藏，现改为有内容即持续显示\n- 更新检查失败（如网络异常）现在会明确显示失败提示，不再无反馈",
     "url":  "https://github.com/Ledgerbiggg/DHS-Desktop/releases/latest"
 }

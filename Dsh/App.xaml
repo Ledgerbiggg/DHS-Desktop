@@ -8,6 +8,7 @@
         <ResourceDictionary>
             <!-- 通用值转换器 -->
             <BooleanToVisibilityConverter x:Key="BoolToVisConverter" />
+            <converter:StringNotEmptyToVisibilityConverter x:Key="StringNotEmptyToVisConverter" />
 
             <!-- 全局字体：作用于所有 TextBlock，避免默认 Segoe UI 中文回退不一致 -->
             <Style TargetType="TextBlock">
