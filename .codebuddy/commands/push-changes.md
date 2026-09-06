@@ -39,7 +39,7 @@ argument-hint: "可选：提交说明，例如 feat: add tray double-click toggl
    ```
    git push
    ```
-6. ⚠️ 本指令**只做 pull + push 同步**：不要修改 `Dsh/version.json` 的 version、不要改 csproj 版本号、不要写 release notes。工作流 build.yml 仅在版本号变更(push 后)才出包，普通推送不会触发发版，符合预期。
+6. ⚠️ 本指令**只做 pull + push 同步**：不要修改根目录 `version.json` 的 version、不要改 csproj 版本号、不要写 release notes。工作流 build.yml 仅在版本号变更(push 后)才出包，普通推送不会触发发版，符合预期。
 
 ## 完成汇报
 向用户汇报：是否新建了提交（及消息）、pull 结果、push 结果（推送的提交数）。并提示：「这是常规同步推送，未升版本、未触发发版；需要发版时再调用 /publish-release」。

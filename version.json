@@ -1,0 +1,5 @@
+{
+    "version": "0.1.3",
+    "notes": "## v0.1.3 更新说明\n> 生成时间：2026-09-06\n\n### 🐛 问题修复\n- 修复 GitHub Actions 发布工作流：release 检查步骤在 pwsh 下因 gh 退出码透传被误判为失败，整体改用 bash 实现\n- 修复应用内自动更新：version.json 拉取地址 404，更新检查实际不可用\n- 修复发布脚本读写 version.json 未指定 UTF-8 导致的中文更新说明乱码\n- 修复 README 中 .NET 版本徽章笔误\n\n### 🔧 调整\n- version.json 统一移至项目根目录；csproj 以 Link 方式拷入输出目录，运行时读取路径不变\n\n### 🧹 杂项\n- 新增应用图标 deepseek-dark_48x48.ico，并嵌入 exe 与安装包\n- 自定义 AI 指令（/publish-release、/push-changes）纳入版本管理",
+    "url": "https://github.com/Ledgerbiggg/DHS-Desktop/releases/latest"
+}

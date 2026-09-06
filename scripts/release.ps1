@@ -17,9 +17,9 @@ Write-Host "[1/3] Bumping version ($Part)..." -ForegroundColor Cyan
 $bumpScript = Join-Path $root 'scripts\bump_version.ps1'
 & $bumpScript -Part $Part | Out-Null
 
-# 重新读取版本号
+# 重新读取版本号（显式 UTF-8：csproj 含中文注释）
 $csprojPath = Join-Path $root 'Dsh\Dsh.csproj'
-$csproj = Get-Content $csprojPath -Raw
+$csproj = Get-Content $csprojPath -Raw -Encoding UTF8
 if ($csproj -match '<Version>([^<]+</Version>') {
     $newVer = $matches[1].Trim()
 } else {
@@ -30,8 +30,9 @@ Write-Host "  Version: $newVer" -ForegroundColor Green
 
 # 2. 更新 version.json 的 notes 字段
 Write-Host "[2/3] Writing release notes..." -ForegroundColor Cyan
-$versionJsonPath = Join-Path $root 'Dsh\version.json'
-$vj = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
+$versionJsonPath = Join-Path $root 'version.json'
+# 显式 UTF-8 读取：默认编码会把中文 notes 读成乱码再写回，污染更新说明
+$vj = Get-Content $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $vj.notes = $Notes
 $json = $vj | ConvertTo-Json -Depth 10
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false

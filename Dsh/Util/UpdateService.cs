@@ -20,7 +20,7 @@ public class UpdateInfo
 /// <summary>自动升级服务：从 GitHub 拉取 version.json 比较版本，下载安装包</summary>
 public class UpdateService
 {
-    // GitHub raw 版本信息地址（CI 推送 version.json 到 main 分支后可访问）
+    // GitHub raw 版本信息地址（version.json 统一放仓库根目录，push 到 main 后即可访问）
     private const string VersionJsonUrl =
         "https://raw.githubusercontent.com/Ledgerbiggg/DHS-Desktop/main/version.json";
 

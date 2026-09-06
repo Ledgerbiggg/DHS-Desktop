@@ -1,4 +1,19 @@
-name: Build & Release
+name: Build and Release
+
+# 工作流职责：云端打包安装包并发布到 GitHub Release。
+# 触发：push 到 main（版本号变更时自动出包）。
+# 流程：读 csproj <Version> -> 若对应 Release(tag vX.Y.Z) 已存在则跳过 ->
+#       否则 dotnet publish + Inno Setup 打包 -> 创建 Release 并上传安装包，
+#       Release 说明(note)取自仓库根目录 version.json 的 notes 字段。
+#
+# 开发者本地只需: 改代码 -> make release (升版本号 + 写 version.json notes) -> git push
+# 其余打包/发布由本工作流完成。安装包不进 git（仓库保持干净）。
+#
+# ⚠️ 判定/发布步骤一律用 shell: bash，不要改回 pwsh：
+#    pwsh 下 `gh release view` 查不到 Release 时退出码为 1（这是正常路径），
+#    但后续 PowerShell cmdlet 不会重置 $LASTEXITCODE，runner 在步骤末尾
+#    会以 exit $LASTEXITCODE 收尾，把「Release 不存在」误判成步骤失败。
+#    bash 的 if 对非零退出码处理干净，无此问题（与 AIMux 工作流同款写法）。
 
 on:
   push:
@@ -9,86 +24,89 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-release:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 9
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
       - name: Read version from csproj
         id: ver
-        shell: pwsh
+        shell: bash
         run: |
-          $csproj = Get-Content "Dsh/Dsh.csproj" -Raw
-          if ($csproj -match '<Version>([^<]+)</Version>') {
-            $version = $matches[1].Trim()
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version" -Encoding utf8
-            Write-Host "Version: $version"
-          } else {
-            Write-Host "ERROR: <Version> not found in csproj"
-            exit 1
-          }
+          VER=$(grep -oP '(?<=<Version>)[^<]+' Dsh/Dsh.csproj)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Version in csproj: $VER"
 
-      - name: Check if release already exists
+      - name: Read release notes from version.json
+        shell: bash
+        run: |
+          echo "=== version.json content (debug) ==="
+          cat version.json
+          echo "======================================="
+          # 提取 notes 字段值（去掉首尾引号）
+          NOTES=$(sed -n 's/.*"notes": *"\([^"]*\)".*/\1/p' version.json | head -1)
+          # 将 JSON 中的字面 \n 转为真实换行；\u003e 等是旧版 ConvertTo-Json
+          # 的 HTML 转义残留，一并还原，避免 Release 说明显示乱码
+          echo "${NOTES}" | sed -e 's/\\n/\n/g' -e 's/\\u003e/>/g' -e 's/\\u003c/</g' -e 's/\\u0026/\&/g' > release_notes.txt
+          echo "Release notes -> release_notes.txt:"
+          cat release_notes.txt
+
+      - name: Skip if Release already exists
         id: check
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "v${{ steps.ver.outputs.version }}"
-          Write-Host "Checking release $tag ..."
-          $out = gh release view $tag 2>&1
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "Release $tag already exists, skipping."
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "skip=true" -Encoding utf8
-          } elseif ($out -join "`n" -match "not be found|404|no release|not exist") {
-            Write-Host "Release $tag not found, will create."
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "skip=false" -Encoding utf8
-          } else {
-            Write-Error ("Failed to query release $tag : " + ($out -join "`n"))
-            exit 1
-          }
+          TAG="v${{ steps.ver.outputs.version }}"
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping build."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release $TAG not found, will create."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Extract release notes
-        if: steps.check.outputs.skip != 'true'
-        shell: pwsh
+      - name: Publish (self-contained)
+        if: steps.check.outputs.exists == 'false'
+        shell: bash
         run: |
-          $vj = Get-Content "Dsh/version.json" -Raw | ConvertFrom-Json
-          $notes = $vj.notes
-          if (-not $notes) { $notes = "Release v${{ steps.ver.outputs.version }}" }
-          $notes | Out-File -FilePath "release_notes.txt" -Encoding:UTF8 -NoNewline
+          dotnet publish Dsh/Dsh.csproj -c Release \
+            -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -o _publish
 
-      - name: Publish (self-contained, single-file)
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          dotnet publish Dsh/Dsh.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o _publish
-
-      - name: Build installer (Inno Setup)
-        if: steps.check.outputs.skip != 'true'
+      - name: Build installer with Inno Setup Action
+        if: steps.check.outputs.exists == 'false'
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
           path: installer.iss
           options: /DMyAppVersion=${{ steps.ver.outputs.version }}
 
       - name: Create GitHub Release
-        if: steps.check.outputs.skip != 'true'
-        shell: pwsh
+        if: steps.check.outputs.exists == 'false'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "v${{ steps.ver.outputs.version }}"
-          $installer = Get-ChildItem "package\Dsh-Setup-*.exe" | Select-Object -First 1
-          if (-not $installer) {
-            Write-Host "ERROR: Installer not found"
+          VER="${{ steps.ver.outputs.version }}"
+          TAG="v$VER"
+          EXE="package/Dsh-Setup-$VER.exe"
+          if [ ! -f "$EXE" ]; then
+            echo "ERROR: installer not found at $EXE"
+            ls -la package/ || true
             exit 1
-          }
-          gh release create "$tag" "$($installer.FullName)" `
-            --title "Dsh ${{ steps.ver.outputs.version }}" `
-            --notes-file "release_notes.txt"
-          Write-Host "Release $tag created successfully."
+          fi
+          gh release create "$TAG" "$EXE" \
+            -R "$GITHUB_REPOSITORY" \
+            --title "Dsh $VER" \
+            --notes-file release_notes.txt
+
+      - name: Done (skipped)
+        if: steps.check.outputs.exists == 'true'
+        run: echo "Release v${{ steps.ver.outputs.version }} already published; nothing to do."

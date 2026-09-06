@@ -1,5 +1,5 @@
 ---
-description: 发布新版本：升级版本号 + 整理上次发版到当前的全部提交 + 写入 Dsh/version.json 更新清单 + 提交并推送到远端。push 后 GitHub 工作流会自动据此生成 Release 说明与安装包。
+description: 发布新版本：升级版本号 + 整理上次发版到当前的全部提交 + 写入根目录 version.json 更新清单 + 提交并推送到远端。push 后 GitHub 工作流会自动据此生成 Release 说明与安装包。
 argument-hint: "[patch|minor|major]  默认 patch"
 ---
 
@@ -34,7 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bump_version.ps1 -
   ```
 - ⚠️ 重要：**必须取区间内的全部提交，绝不能只取当前/最新一条提交消息**。这是生成完整更新清单的前提。
 
-### 4. 生成中文更新清单并写入 Dsh/version.json
+### 4. 生成中文更新清单并写入根目录 version.json
 - 把第 3 步收集到的全部提交，按类型前缀分类（feat→✨新功能、fix→🐛问题修复、ui→🎨界面优化、perf→🚀性能优化、refactor→♻️代码重构、ci→🔧构建/流水线、doc→📝文档、test→✅测试、chore→🧹杂项；无前缀归为「其他」）。
 - 整理成如下格式的多行文本：
   ```
@@ -52,8 +52,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bump_version.ps1 -
   ```
 - 把这段清单写入仓库内 `Dsh/version.json` 的 `notes` 字段（保留原有 `version`/`url` 字段，仅更新 `notes`）。直接用 PowerShell 读取现有 JSON 对象、更新 notes 后再以 UTF-8 无 BOM 写回，避免硬编码字段名或破坏缩进：
   ```powershell
-  $p = "Dsh/version.json"
-  $vj = Get-Content $p -Raw | ConvertFrom-Json
+  $p = "version.json"
+  # 显式 UTF-8 读取：默认编码会把中文 notes 读成乱码再写回
+  $vj = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
   $vj.notes = $notes   # 上面生成的中文更新清单文本
   $utf8NoBom = New-Object System.Text.UTF8Encoding $false
   [System.IO.File]::WriteAllText($p, ($vj | ConvertTo-Json -Depth 10), $utf8NoBom)

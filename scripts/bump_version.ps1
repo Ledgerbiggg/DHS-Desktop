@@ -10,10 +10,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $csprojPath = Join-Path $root 'Dsh\Dsh.csproj'
-$versionJsonPath = Join-Path $root 'Dsh\version.json'
+$versionJsonPath = Join-Path $root 'version.json'
 
-# 读取当前版本号
-$csproj = Get-Content $csprojPath -Raw
+# 读取 csproj（显式 UTF-8：文件含中文注释，默认编码读取会乱码后再写回损坏文件）
+$csproj = Get-Content $csprojPath -Raw -Encoding UTF8
 if ($csproj -match '<Version>([^<]+)</Version>') {
     $current = $matches[1].Trim()
 } else {
@@ -46,7 +46,8 @@ Set-Content -Path $csprojPath -Value $newCsproj -NoNewline -Encoding UTF8
 
 # 更新 version.json（保留 notes 和 url，仅替换 version 字段）
 if (Test-Path $versionJsonPath) {
-    $vj = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
+    # 显式 UTF-8 读取，避免 Windows PowerShell 按 ANSI 误解 UTF-8 中文
+    $vj = Get-Content $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $vj.version = $newVer
     # UTF-8 无 BOM：JsonSerializer 要求无 BOM，否则 Parse 拒绝
     $json = $vj | ConvertTo-Json -Depth 10
