@@ -28,7 +28,7 @@ jobs:
           $csproj = Get-Content "Dsh/Dsh.csproj" -Raw
           if ($csproj -match '<Version>([^<]+)</Version>') {
             $version = $matches[1].Trim()
-            echo "version=$version" >> $env:GITHUB_OUTPUT
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version" -Encoding utf8
             Write-Host "Version: $version"
           } else {
             Write-Host "ERROR: <Version> not found in csproj"
@@ -42,12 +42,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "v${{ steps.ver.outputs.version }}"
-          $exists = gh release view "$tag" 2>$null
+          Write-Host "Checking release $tag ..."
+          $out = gh release view $tag 2>&1
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag already exists, skipping."
-            echo "skip=true" >> $env:GITHUB_OUTPUT
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "skip=true" -Encoding utf8
+          } elseif ($out -join "`n" -match "not be found|404|no release|not exist") {
+            Write-Host "Release $tag not found, will create."
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "skip=false" -Encoding utf8
           } else {
-            echo "skip=false" >> $env:GITHUB_OUTPUT
+            Write-Error ("Failed to query release $tag : " + ($out -join "`n"))
+            exit 1
           }
 
       - name: Extract release notes

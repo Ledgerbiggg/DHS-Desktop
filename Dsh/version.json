@@ -1,5 +1,5 @@
 {
-    "version": "0.1.1",
-    "notes": "## v0.1.1 更新说明\n> 生成时间：2026-09-06\n\n### ✨ 新功能\n- 新增 DeepSeek harness 重启按钮：确认后终止并重新运行本地服务，页面自动重新加载\n- 移除冗余的网页刷新按钮\n\n### 🐛 问题修复\n- 修复应用退出 / 托盘退出 / 升级安装 / 进程崩溃时未终止 dsh web 后台进程，导致 3080 端口残留的问题\n- 修复 WPF 无边框窗口内嵌 WebView2 后边缘无法拖拽缩放的问题（内容区边缘留出 8px 交给 WPF 命中）\n\n### 🧹 杂项\n- 引入 DshHostService 托管本地服务进程生命周期（含 Job Object 兜底回收）\n- 新增主题服务、消息框助手、开发热重载脚本、README 与文档/截图\n\n共 2 条提交。",
+    "version": "0.1.2",
+    "notes": "## v0.1.2 更新说明\n> 生成时间：2026-09-06\n\n### 🐛 问题修复\n- 修复 GitHub Actions 发布工作流：release 检查步骤在 PowerShell 下向 GITHUB_OUTPUT 写入编码错误，导致版本号解析失败、发布中断（改用 UTF-8 显式写入，并区分“release 不存在”与“查询失败”）\n- 修复 README 中 .NET 徽章笔误（.NET-9嗯.0 → .NET-9.0）\n\n### 🧹 杂项\n- 新增应用图标 deepseek-dark_48x48.ico，并嵌入 exe 与安装包\n- 将自定义命令纳入版本管理",
     "url": "https://github.com/Ledgerbiggg/DHS-Desktop/releases/latest"
 }
