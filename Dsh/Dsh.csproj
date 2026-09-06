@@ -9,7 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Dsh</RootNamespace>
     <AssemblyName>Dsh</AssemblyName>
-    <Version>0.2.3</Version>
+    <Version>0.2.4</Version>
     <!-- 应用图标：嵌入 exe -->
     <ApplicationIcon>Assets\deepseek-dark_48x48.ico</ApplicationIcon>
   </PropertyGroup>
@@ -25,7 +25,9 @@
     <Resource Include="Assets\**\*" />
   </ItemGroup>
 
-  <!-- 托盘 .ico：作为内容复制到输出目录，供 NotifyIcon 从文件系统加载 -->
+  <!-- 托盘 .ico 的 Debug 期磁盘副本：仅作 AppIcon 最后回退。
+       单文件发布时该副本会并入 bundle（安装目录无 Assets），
+       运行时统一走 exe 内嵌 Win32 图标提取，见 Util/AppIcon.cs -->
   <ItemGroup>
     <Content Include="Assets\deepseek-dark_48x48.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

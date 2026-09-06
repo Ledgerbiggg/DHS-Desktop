@@ -1,8 +1,7 @@
 using System.Windows.Input;
+using Dsh.Util;
 using Dsh.ViewModels;
 using Wpf.Ui.Controls;
-
-
 
 namespace Dsh.Views;
 
@@ -12,11 +11,10 @@ public partial class SettingsWindow : FluentWindow
     public SettingsWindow(SettingsViewModel viewModel)
     {
         InitializeComponent();
-        // 容错设置窗口图标
+        // 容错设置窗口图标（单文件发布下 pack URI 失效，见 AppIcon）
         try
         {
-            var iconUri = new Uri("pack://application:,,,/Assets/deepseek-dark_48x48.ico", UriKind.Absolute);
-            Icon = new System.Windows.Media.Imaging.BitmapImage(iconUri);
+            Icon = AppIcon.GetWindowIcon();
         }
         catch (Exception ex)
         {
