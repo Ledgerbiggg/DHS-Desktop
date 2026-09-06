@@ -1,5 +1,5 @@
 {
-    "version":  "0.2.1",
-    "notes":  "## v0.2.1 更新说明\n\u003e 生成时间：2026-09-06\n\n### 🐛 问题修复\n- 修复设置窗口「检查更新」点击后看不到结果：状态文本此前绑定 IsBusy，检查一结束就被隐藏，现改为有内容即持续显示\n- 更新检查失败（如网络异常）现在会明确显示失败提示，不再无反馈",
+    "version":  "0.2.2",
+    "notes":  "## v0.2.2 更新说明\n\u003e 生成时间：2026-09-06\n\n### 🐛 问题修复\n- 修复安装后托盘图标显示为系统默认：单文件发布产物缺少 Assets 图标文件（csproj 中 Resource 与 Content 双重声明所致），现改为从 exe 内嵌资源加载，不再依赖外部文件",
     "url":  "https://github.com/Ledgerbiggg/DHS-Desktop/releases/latest"
 }

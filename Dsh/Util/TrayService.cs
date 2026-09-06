@@ -26,16 +26,9 @@ public class TrayService : IDisposable
         if (_trayIcon is not null)
             return;
 
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "deepseek-dark_48x48.ico");
-        Icon icon;
-        if (File.Exists(iconPath))
-            icon = new Icon(iconPath);
-        else
-            icon = SystemIcons.Application; // 兜底
-
         _trayIcon = new NotifyIcon
         {
-            Icon = icon,
+            Icon = LoadIcon(),
             Text = "DeepSeek",
             Visible = true,
             ContextMenuStrip = BuildMenu(),
@@ -55,6 +48,33 @@ public class TrayService : IDisposable
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _trayIcon = null;
+    }
+
+    /// <summary>加载托盘图标：优先从 exe 内嵌资源（WPF Resource）读取，
+    /// 单文件发布/安装后不依赖外部文件；失败再回退输出目录文件与系统图标。
+    /// 背景：csproj 中同一 ico 被 Resource 与 Content 双重声明，单文件 publish
+    /// 时 Content 复制被 Resource 声明吞掉，产物缺少 Assets 文件，导致安装后
+    /// 托盘显示系统默认图标</summary>
+    private static Icon LoadIcon()
+    {
+        try
+        {
+            var sri = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Assets/deepseek-dark_48x48.ico"));
+            if (sri != null)
+            {
+                using var stream = sri.Stream;
+                return new Icon(stream);
+            }
+        }
+        catch
+        {
+            // 嵌入资源异常时走文件回退，不在此处中断托盘创建
+        }
+
+        // 开发期 Debug 目录的 Content 副本（仅作回退，安装环境下通常不存在）
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "deepseek-dark_48x48.ico");
+        return File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
     }
 
     /// <summary>构建托盘右键菜单</summary>
