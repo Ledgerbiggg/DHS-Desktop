@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Git pre-push hook: 推送前校验构建 + 递增版本号
+# 放在 .githooks/ 目录下以便被 Git 跟踪同步
+
+VERSION_FILE=".VERSION"
+APP_DIR="app"
+
+# ==========================================
+#  Step 1: 构建检查 — 失败则阻止推送，不递增版本号
+# ==========================================
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR/$APP_DIR" || exit 1
+
+if [ ! -d "node_modules" ]; then
+  echo "[pre-push] 未找到 node_modules，跳过构建检查"
+else
+  echo "[pre-push] 运行构建检查 (npm run build)..."
+  OUTPUT=$(npm run build 2>&1)
+  EXIT_CODE=$?
+
+  if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "========================================"
+    echo "  构建失败，推送已阻止，版本号不会递增"
+    echo "========================================"
+    echo ""
+    echo "$OUTPUT"
+    echo ""
+    echo "请修复以上错误后重新推送。"
+    exit 1
+  fi
+
+  echo "[pre-push] 构建检查通过 ✓"
+fi
+
+# ==========================================
+#  Step 2: 版本号递增
+# ==========================================
+cd "$ROOT_DIR" || exit 1
+
+HEAD_MSG=$(git log -1 --pretty=%B)
+
+# 如果最近一次提交带 [skip ci]，跳过版本号自增
+if echo "$HEAD_MSG" | grep -qi "\[skip ci\]\|\[ci skip\]"; then
+  echo "[pre-push] 最近一次提交包含 [skip ci]，跳过版本号递增"
+  exit 0
+fi
+
+# 如果最近一次提交已经是版本变更（chore: bump version），不再重复自增
+if echo "$HEAD_MSG" | grep -q "^chore: bump version to"; then
+  echo "[pre-push] 最近一次提交已是版本变更，无需重复递增版本号"
+  exit 0
+fi
+
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "[pre-push] 错误：未找到 $VERSION_FILE 文件，推送已阻止。"
+  echo "[pre-push] 请在项目根目录创建 $VERSION_FILE 文件，格式如：0.2.75"
+  exit 1
+fi
+
+VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+
+if [ -z "$VERSION" ]; then
+  echo "[pre-push] 错误：$VERSION_FILE 文件内容为空，推送已阻止。"
+  exit 1
+fi
+
+IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+if ! [[ "$MAJOR" =~ ^[0-9]+$ && "$MINOR" =~ ^[0-9]+$ && "$PATCH" =~ ^[0-9]+$ ]]; then
+  echo "[pre-push] 错误：$VERSION_FILE 格式无效（期望 x.y.z，当前内容：$VERSION），推送已阻止。"
+  exit 1
+fi
+
+PATCH=$((PATCH + 1))
+if [ "$PATCH" -ge 100 ]; then
+  PATCH=0
+  MINOR=$((MINOR + 1))
+fi
+
+if [ "$MINOR" -ge 100 ]; then
+  MINOR=0
+  MAJOR=$((MAJOR + 1))
+fi
+
+NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+echo "[pre-push] 版本号：$VERSION -> $NEW_VERSION"
+
+echo "$NEW_VERSION" > "$VERSION_FILE"
+
+git add "$VERSION_FILE"
+git commit -m "chore: bump version to ${NEW_VERSION}"
+
+echo "[pre-push] 已自动提交版本变更，继续推送..."
+
+REMOTE="${1:-origin}"
+CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+(sleep 5 && git fetch "${REMOTE}" "${CURRENT_BRANCH}" --quiet 2>/dev/null) &
+
+exit 0

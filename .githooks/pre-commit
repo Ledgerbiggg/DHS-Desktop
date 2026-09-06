@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# pre-commit 变更文件编码检查：防止 AI 工具把乱码写进源码、注释、发布日志/更新说明等文件。
+# 只检查本次暂存的文本文件，历史遗留文件不受影响。
+# 逃生口：ALLOW_DIRTY_ENCODING=1 git commit ... 跳过检查。
+#
+
+# 检查范围：代码/配置/文档/发布相关全部纳入。
+# iss/csproj 是 Inno Setup / .NET 发布场景（WPF 桌面程序发布日志、版本说明）的主力文件类型
+EXT_FILTER='\.(md|txt|iss|csproj|vbproj|sln|xml|json|ya?ml|toml|ini|go|ts|tsx|js|jsx|vue|sql|css|scss|html|ps1|psm1|sh|bat|cmd|cs|py)$'
+
+# 逃生口：显式声明时放行
+[ "$ALLOW_DIRTY_ENCODING" = "1" ] && exit 0
+
+fail() {
+    echo "" >&2
+    echo "✖ 提交被拦截：文件编码异常（疑似乱码）" >&2
+    echo "" >&2
+    echo "  文件: $1" >&2
+    echo "  原因: $2" >&2
+    echo "" >&2
+    echo "  修复: 将该文件转为标准 UTF-8 后重新 git add。确属历史遗留编码:" >&2
+    echo "        ALLOW_DIRTY_ENCODING=1 git commit ..." >&2
+    exit 1
+}
+
+# -z 用 NUL 分隔文件名，避免路径含空格被拆断
+git diff --cached --name-only -z --diff-filter=ACM \
+| while IFS= read -r -d '' f; do
+    # 路径按扩展名过滤后再逐个校验，避免检查二进制与无关文件
+    printf '%s' "$f" | grep -Eiq "$EXT_FILTER" || continue
+    [ -f "$f" ] || continue
+
+    if ! iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1; then
+        fail "$f" "不是合法 UTF-8（疑似 GBK 等其他编码写入）"
+    fi
+    if LC_ALL=C grep -q $'\xEF\xBF\xBD' "$f"; then
+        fail "$f" "包含 U+FFFD 替换字符（�），即已产生的乱码"
+    fi
+done
+
+exit 0
