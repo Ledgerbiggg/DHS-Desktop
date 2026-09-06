@@ -1,19 +1,24 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Dsh.Util;
 
 /// <summary>远程升级信息（对应 GitHub raw version.json）</summary>
 public class UpdateInfo
 {
-    /// <summary>最新版本号，如 "0.1.0"</summary>
+    /// <summary>最新版本号，如 "0.1.0"。远程 JSON 键为小写，
+    /// System.Text.Json 默认区分大小写，必须显式映射，否则反序列化为空串</summary>
+    [JsonPropertyName("version")]
     public string Version { get; set; } = "";
 
     /// <summary>更新说明（展示给用户）</summary>
+    [JsonPropertyName("notes")]
     public string Notes { get; set; } = "";
 
     /// <summary>发布页地址</summary>
+    [JsonPropertyName("url")]
     public string Url { get; set; } = "";
 }
 
