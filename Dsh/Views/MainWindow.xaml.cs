@@ -20,12 +20,16 @@ public partial class MainWindow : FluentWindow
     private readonly HotkeyManager _hotkeyManager;
     private readonly TrayService _trayService;
     private readonly ConfigService _config;
+    private readonly DshHostService _dshHost;
+    private readonly ThemeService _themeService;
     private AppSettings _settings;
     private HwndSource? _hwndSource;
-    private bool _closingToTray = true;
+    // 服务已就绪但 WebView2 仍在初始化时暂存的目标地址
+    private string? _pendingUrl;
 
     public MainWindow(MainViewModel vm, HotkeyManager hotkeyManager,
-        TrayService trayService, ConfigService config)
+        TrayService trayService, ConfigService config, DshHostService dshHost,
+        ThemeService themeService)
     {
         InitializeComponent();
         // 容错设置窗口图标
@@ -43,10 +47,13 @@ public partial class MainWindow : FluentWindow
         _hotkeyManager = hotkeyManager;
         _trayService = trayService;
         _config = config;
+        _dshHost = dshHost;
+        _themeService = themeService;
         _settings = _config.LoadSettings();
         DataContext = vm;
 
-        vm.ReloadRequested += (_, _) => WebView.Reload();
+        // 服务地址就绪（首次启动、失败重试、重启）后导航到带 token 的地址
+        vm.NavigateRequested += (_, url) => Navigate(url);
         _trayService.ShowRequested += (_, _) => ToggleWindow();
         _trayService.OpenRequested += (_, _) => ShowWindow();
         _trayService.ExitRequested += (_, _) => ExitApp();
@@ -73,10 +80,14 @@ public partial class MainWindow : FluentWindow
 
             _trayService.Show();
 
-            // 初始化 WebView2 并加载 DeepSeek 本地服务
-            await WebView.EnsureCoreWebView2Async();
-            WebView.CoreWebView2.NavigationCompleted += (_, _) => { };
-            WebView.Source = new Uri(_vm.Url);
+            // WebView2 运行时初始化与 dsh 服务启动并行，缩短首屏等待；
+            // 服务就绪后经 NavigateRequested 回调导航，若此刻 WebView2 尚未就绪则暂存地址
+            var webViewReady = WebView.EnsureCoreWebView2Async();
+            _ = _vm.StartServiceAsync();
+
+            await webViewReady;
+            if (_pendingUrl is not null)
+                Navigate(_pendingUrl);
         }
         catch (Exception ex)
         {
@@ -91,9 +102,31 @@ public partial class MainWindow : FluentWindow
         _ = _vm.CheckUpdateAtStartupAsync();
     }
 
+    /// <summary>导航到指定地址；WebView2 尚未就绪时暂存，待初始化完成后补上</summary>
+    private void Navigate(string url)
+    {
+        if (WebView.CoreWebView2 is null)
+        {
+            _pendingUrl = url;
+            return;
+        }
+        _pendingUrl = null;
+        try
+        {
+            WebView.CoreWebView2.Navigate(url);
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Error($"导航失败: {url}", ex);
+        }
+    }
+
     /// <summary>窗口句柄创建后：若配置了启动到托盘，直接隐藏</summary>
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
+        // 句柄就绪后才能挂上系统主题监听（跟随系统模式），启动时补上这一环
+        _themeService.Apply(_settings.Theme, this);
+
         if (_settings.StartHidden)
         {
             Visibility = Visibility.Hidden;
@@ -184,14 +217,17 @@ public partial class MainWindow : FluentWindow
         Topmost = false;
     }
 
-    /// <summary>关闭按钮 → 隐藏到托盘常驻（真正退出走托盘"退出"）</summary>
+    /// <summary>
+    /// 关闭按钮 → 隐藏到托盘常驻；应用级退出（托盘"退出"/升级安装）放行真正关闭。
+    /// 注意：若在此无条件 e.Cancel = true，WPF 会连带取消 Application.Shutdown，
+    /// 导致进程与 dsh 后台服务都退不掉（升级时还会占用 exe 文件）。
+    /// </summary>
     private void MainWindow_OnClosing(object? sender, CancelEventArgs e)
     {
-        if (_closingToTray)
-        {
-            e.Cancel = true;
-            Hide();
-        }
+        if (App.IsExiting) return;
+
+        e.Cancel = true;
+        Hide();
     }
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
@@ -199,6 +235,8 @@ public partial class MainWindow : FluentWindow
         SaveWindowState();
         _hwndSource?.RemoveHook(WndProc);
         _hotkeyManager.Dispose();
+        // 真正退出时终止托管的 dsh web 服务，避免 3080 端口残留
+        _dshHost.Stop();
     }
 
     /// <summary>恢复上次窗口位置与大小</summary>
@@ -228,12 +266,13 @@ public partial class MainWindow : FluentWindow
         _config.SaveSettings(_settings);
     }
 
-    /// <summary>托盘"退出"：真正结束进程</summary>
+    /// <summary>托盘"退出"：真正结束进程（dsh 后台服务随窗口关闭终止）</summary>
     private void ExitApp()
     {
-        _closingToTray = false;
         SaveWindowState();
         _trayService.Hide();
-        Application.Current.Shutdown();
+        // 先停后台服务再退出：即便后续窗口关闭流程出意外，也不会残留 dsh 进程
+        _dshHost.Stop();
+        App.RequestShutdown();
     }
 }

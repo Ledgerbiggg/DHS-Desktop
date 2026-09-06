@@ -13,6 +13,31 @@ public class SettingsViewModel : BindableBase
     private readonly ConfigService _config;
     private readonly AppSettings _settings;
     private readonly UpdateService _updateService;
+    private readonly ThemeService _themeService;
+
+    // —— 主题 ——
+    private string _theme = ThemeService.System;
+    /// <summary>主题模式：System / Light / Dark；切换后立即生效并写入配置</summary>
+    public string Theme
+    {
+        get => _theme;
+        set
+        {
+            if (!SetProperty(ref _theme, value)) return;
+            // 视觉偏好即时生效并落盘，不必再点「保存」
+            _settings.Theme = value;
+            _themeService.Apply(value, Application.Current.MainWindow);
+            _config.SaveSettings(_settings);
+        }
+    }
+
+    /// <summary>主题下拉选项：Value 存配置，Label 用于显示</summary>
+    public List<ThemeOption> ThemeOptions { get; } =
+    [
+        new(ThemeService.System, "跟随系统"),
+        new(ThemeService.Light, "浅色"),
+        new(ThemeService.Dark, "深色"),
+    ];
 
     // —— 开机自启 ——
     private bool _autoStart;
@@ -97,12 +122,16 @@ public class SettingsViewModel : BindableBase
     public DelegateCommand RecordCommand { get; }
     public DelegateCommand CheckCommand { get; }
 
-    public SettingsViewModel(ConfigService config, UpdateService updateService)
+    public SettingsViewModel(ConfigService config, UpdateService updateService,
+        ThemeService themeService)
     {
         _config = config;
         _updateService = updateService;
+        _themeService = themeService;
         _settings = config.LoadSettings();
 
+        // 用字段赋值而非属性，避免构造期就把当前主题重复应用一遍
+        _theme = ThemeService.Normalize(_settings.Theme);
         AutoStart = GetAutoStart();
         HotkeyModifier = _settings.ToggleHotkey.Modifier;
         HotkeyKey = _settings.ToggleHotkey.Key;
@@ -217,7 +246,7 @@ public class SettingsViewModel : BindableBase
             FileName = path,
             UseShellExecute = true,
         });
-        Application.Current.Shutdown();
+        App.RequestShutdown();
     }
 
     /// <summary>读取开机自启状态</summary>

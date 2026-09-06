@@ -49,10 +49,10 @@
 
                 <!-- 右侧按钮组 -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <!-- 刷新网页 -->
-                    <Button Style="{StaticResource TopBarButtonStyle}" Command="{Binding ReloadCommand}"
+                    <!-- 重启本地服务：确认后终止 dsh web 再重新拉起，界面随之重载 -->
+                    <Button Style="{StaticResource TopBarButtonStyle}" Command="{Binding RestartCommand}"
                             Width="34" Height="34" Padding="0" Margin="2,0,0,0"
-                            ToolTip="刷新网页">
+                            ToolTip="重启 DeepSeek harness（终止并重新运行本地服务）">
                         <TextBlock Text="&#x21BB;" FontSize="15"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -71,7 +71,57 @@
 
         <!-- WebView2 内容区：加载 DeepSeek 本地服务 -->
         <Grid Grid.Row="2" Background="{DynamicResource ControlFillColorDefaultBrush}">
-            <wv2:WebView2 x:Name="WebView" />
+            <!-- WebView2 是原生子窗口(HWND)，鼠标消息被它截获，主窗口收不到 WM_NCHITTEST，
+                 因此左/右/下各留 8px 交给 WPF 命中，由 WindowChrome 提供边缘缩放；
+                 最大化时无缩放需求，边距归零避免内容区出现空白边 -->
+            <wv2:WebView2 x:Name="WebView">
+                <wv2:WebView2.Style>
+                    <Style TargetType="wv2:WebView2">
+                        <Setter Property="Margin" Value="8,0,8,8" />
+                        <Style.Triggers>
+                            <DataTrigger
+                                Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Value="Maximized">
+                                <Setter Property="Margin" Value="0" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </wv2:WebView2.Style>
+            </wv2:WebView2>
+
+            <!-- 服务启动中遮罩：dsh 冷启动需数秒，期间避免显示无权限的空白页 -->
+            <Grid Background="{DynamicResource ApplicationBackgroundBrush}"
+                  Visibility="{Binding IsServiceStarting, Converter={StaticResource BoolToVisConverter}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ui:ProgressRing IsIndeterminate="True" Width="34" Height="34" />
+                    <TextBlock Text="正在启动本地服务…" Margin="0,14,0,0" FontSize="13"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- 服务启动失败提示：ServiceError 非空时显示，提供重试入口 -->
+            <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ServiceError}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="32,0">
+                    <TextBlock Text="&#x26A0;" FontSize="30" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                    <TextBlock Text="{Binding ServiceError}" Margin="0,12,0,0" FontSize="13"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <ui:Button Content="重试" Margin="0,18,0,0" HorizontalAlignment="Center"
+                               Appearance="Primary" Command="{Binding RetryServiceCommand}" />
+                </StackPanel>
+            </Grid>
         </Grid>
     </Grid>
 </ui:FluentWindow>

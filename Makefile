@@ -1,9 +1,9 @@
-我清朝突破八处。我最后我偷情就好爱心。我轻飘飘飞过。我说我有好爱我。
 # Dsh - DeepSeek 桌面客户端
 # .NET 9 + WPF + Prism.Unity + WPF-UI 4.0 + WebView2
 #
 # 常用:
 #   make dev    - 杀进程 + 构建(Debug) + 运行
+#   make watch  - 热部署：启动后监听源码变化，自动重建并重启（按 Q 退出）
 #   make build  - 构建解决方案
 #   make dist   - 本地打包安装包（需 Inno Setup）
 #   make release - 发布（云端出包）：升版本 + 写 notes + 提交 + 推送
@@ -21,7 +21,8 @@ CONFIG   ?= Debug
 ISCC     ?= "D:\Inno Setup 7\ISCC.exe"
 NOTES    ?= "minor fixes"
 
-.DEFAULT_GOAL := dev
+# 默认目标：热部署（直接 make 即进入监听重建模式，修改代码自动重启）
+.DEFAULT_GOAL := watch
 
 .PHONY: kill
 kill:
@@ -51,6 +52,11 @@ run:
 .PHONY: dev
 dev: build run
 	@echo "[dev] 已启动 Dsh"
+
+# 热部署：启动后监听源码变化，自动重新构建并重启应用（按 Q 退出）
+.PHONY: watch
+watch:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev_watch.ps1
 
 .PHONY: clean
 clean: kill
@@ -99,10 +105,11 @@ logs:
 help:
 	@echo "Dsh - DeepSeek 桌面客户端"
 	@echo.
-	@echo "默认目标: make = make dev"
+	@echo "默认目标: make = make watch（热部署，Q 退出）"
 	@echo.
 	@echo "可用目标:"
 	@echo "  dev     - 一键启动：杀进程 + 构建 + 运行"
+	@echo "  watch   - 热部署：监听源码，修改自动重建重启（按 Q 退出）"
 	@echo "  build   - 构建解决方案（Debug）"
 	@echo "  run     - 启动主程序（需先 build）"
 	@echo "  kill    - 杀掉残留 Dsh 进程"

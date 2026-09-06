@@ -19,6 +19,30 @@ public partial class App : PrismApplication
     private Mutex? _mutex;
     private bool _ownsMutex;
 
+    /// <summary>是否为整个应用退出（区别于主窗口关闭后隐藏到托盘常驻）</summary>
+    internal static bool IsExiting { get; private set; }
+
+    /// <summary>静态持有 dsh 托管服务：进程退出兜底时 DI 容器可能已不可用</summary>
+    private static DshHostService? _host;
+
+    /// <summary>
+    /// 请求整个应用退出：必须先置 <see cref="IsExiting"/>，否则主窗口 OnClosing 会按
+    /// "关闭到托盘"拦截——WPF 中 Closing 被 Cancel 会连带取消 Application.Shutdown，
+    /// 结果是进程不退出、dsh 后台服务与 3080 端口全部残留。
+    /// </summary>
+    internal static void RequestShutdown()
+    {
+        IsExiting = true;
+        Current.Shutdown();
+    }
+
+    /// <summary>终止托管的 dsh web（幂等，所有退出路径共用）</summary>
+    private static void StopHostSafe()
+    {
+        try { _host?.Stop(); }
+        catch (Exception ex) { LoggerHelper.Error("停止本地服务失败", ex); }
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         // 全局异常兜底：记录日志 + 弹窗提示，完整堆栈写入日志目录
@@ -36,6 +60,10 @@ public partial class App : PrismApplication
             ShowCrashDialog(args.ExceptionObject as Exception, "AppDomain 未处理异常");
         };
 
+        // 兜底：注销/关机、以及不走窗口关闭流程的退出（Environment.Exit、CLR 收尾）也要终止 dsh web
+        SessionEnding += (_, _) => StopHostSafe();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => StopHostSafe();
+
         // 单实例：二次启动时通知已运行实例呼出窗口，自身退出
         _mutex = new Mutex(true, "Dsh_SingleInstance", out var createdNew);
         _ownsMutex = createdNew;
@@ -45,11 +73,17 @@ public partial class App : PrismApplication
             Shutdown();
             return;
         }
+        // 主实例启动前先清理上一实例被强杀/崩溃残留的 dsh web 进程，
+        // 避免 3080 端口被旧进程长期占用；本实例尚未拉起服务，不会误伤自身
+        DshHostService.KillStaleDshProcesses();
         base.OnStartup(e);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // 兜底：任何退出路径都终止托管的 dsh web，避免子进程残留占用 3080 端口
+        StopHostSafe();
+
         if (_ownsMutex)
         {
             try { _mutex?.ReleaseMutex(); } catch (ApplicationException) { }
@@ -108,6 +142,12 @@ public partial class App : PrismApplication
         containerRegistry.RegisterSingleton<HotkeyManager>();
         containerRegistry.RegisterSingleton<TrayService>();
         containerRegistry.RegisterSingleton<UpdateService>();
+        containerRegistry.RegisterSingleton<DshHostService>();
+        containerRegistry.RegisterSingleton<ThemeService>();
+
+        // 静态持有一份引用：进程退出兜底时容器可能已不可用
+        try { _host = Container.Resolve<DshHostService>(); }
+        catch (Exception ex) { LoggerHelper.Error("解析 DshHostService 失败", ex); }
 
         containerRegistry.RegisterSingleton<MainViewModel>();
         containerRegistry.RegisterSingleton<SettingsViewModel>();
@@ -121,8 +161,12 @@ public partial class App : PrismApplication
     {
         var config = Container.Resolve<ConfigService>();
         var settings = config.LoadSettings();
-        if (!File.Exists(config.SettingsPath))
+        // 首次运行、或旧配置尚未包含新增的 Theme 字段时，写回一次让配置文件字段完整
+        var raw = File.Exists(config.SettingsPath) ? File.ReadAllText(config.SettingsPath) : "";
+        if (!raw.Contains("\"Theme\""))
             config.SaveSettings(settings);
+        // 创建窗口前先套用主题，避免深色用户看到窗口先闪一下默认浅色
+        Container.Resolve<ThemeService>().Apply(settings.Theme);
         return Container.Resolve<MainWindow>();
     }
 

@@ -18,7 +18,13 @@ public class AppSettings
 
     /// <summary>启动时是否隐藏到托盘</summary>
     public bool StartHidden { get; set; } = false;
+
+    /// <summary>主题模式：System（跟随系统）/ Light（浅色）/ Dark（深色）</summary>
+    public string Theme { get; set; } = "System";
 }
+
+/// <summary>主题下拉项：Value 存入配置，Label 用于界面显示</summary>
+public record ThemeOption(string Value, string Label);
 
 /// <summary>单条热键绑定</summary>
 public class HotkeyBinding

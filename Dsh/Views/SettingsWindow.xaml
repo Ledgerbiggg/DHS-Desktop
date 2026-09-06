@@ -6,7 +6,7 @@
                     WindowStartupLocation="CenterOwner"
                     ExtendsContentIntoTitleBar="True"
                     Title="设置"
-                    Width="520" Height="480"
+                    Width="520" Height="540"
                     MinWidth="440" MinHeight="360"
                     ResizeMode="NoResize"
                     PreviewKeyDown="OnPreviewKeyDown">
@@ -24,7 +24,15 @@
             <StackPanel Margin="24,20,24,20" MaxWidth="460" HorizontalAlignment="Left" Focusable="True">
                 <TextBlock Style="{StaticResource PanelTitleStyle}" Text="设置" />
                 <TextBlock Style="{StaticResource PanelSubStyle}" Margin="0,4,0,0"
-                           Text="开机自启动与快捷键管理。" />
+                           Text="主题、开机自启与快捷键管理。" />
+
+                <!-- 主题：切换即时生效 -->
+                <TextBlock Style="{StaticResource FormLabelStyle}" Text="主题" Margin="0,20,0,8" />
+                <ComboBox ItemsSource="{Binding ThemeOptions}"
+                          DisplayMemberPath="Label"
+                          SelectedValuePath="Value"
+                          SelectedValue="{Binding Theme, Mode=TwoWay}"
+                          Width="200" HorizontalAlignment="Left" />
 
                 <!-- 开机自启 -->
                 <TextBlock Style="{StaticResource FormLabelStyle}" Text="开机自启" Margin="0,20,0,8" />
