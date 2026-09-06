@@ -16,6 +16,12 @@ public partial class App : PrismApplication
     /// <summary>单实例唤出消息（与主窗口 WndProc 约定一致）</summary>
     private const int WmShowInstance = 0x0401;
 
+    /// <summary>主窗口标题：FindWindow 单实例唤出与静默启动补标题共用此约定</summary>
+    internal const string MainWindowCaption = "DeepSeek";
+
+    /// <summary>本次启动是否静默驻留托盘（InitializeShell 时判定，OnInitialized 复用）</summary>
+    private bool _startHidden;
+
     private Mutex? _mutex;
     private bool _ownsMutex;
 
@@ -170,10 +176,42 @@ public partial class App : PrismApplication
         return Container.Resolve<MainWindow>();
     }
 
+    /// <summary>
+    /// 静默启动（StartHidden 开启）时完全接管窗口显示时机：
+    /// 保留 MainWindow 引用（托盘退出/唤出依赖），不调 base、不 Show。
+    /// 注意：只拦这里是不够的，Prism 在 OnInitialized 里还会 MainWindow?.Show()，
+    /// 见下方 OnInitialized 覆盖——那才是"勾选了仍弹窗"的真凶。
+    /// </summary>
+    protected override void InitializeShell(Window shell)
+    {
+        _startHidden = Container.Resolve<ConfigService>().LoadSettings().StartHidden;
+        if (_startHidden && shell is MainWindow main)
+        {
+            MainWindow = shell;
+            main.StartHiddenToTray();
+            return;
+        }
+
+        base.InitializeShell(shell);
+    }
+
+    /// <summary>
+    /// Prism 默认实现是 MainWindow?.Show()——窗口显示的真正发生地：
+    /// 即便 InitializeShell 里没显示，这里也会把隐藏的窗口强行拉出来。
+    /// 静默启动必须一并拦截，否则窗口"创建时不可见、随后又被 Show 出来"。
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        if (_startHidden)
+            return;
+
+        base.OnInitialized();
+    }
+
     /// <summary>向已运行实例发送唤出消息</summary>
     private static void NotifyMainWindow()
     {
-        var hwnd = FindWindow(null, "DeepSeek");
+        var hwnd = FindWindow(null, MainWindowCaption);
         if (hwnd != IntPtr.Zero)
             PostMessage(hwnd, WmShowInstance, IntPtr.Zero, IntPtr.Zero);
     }

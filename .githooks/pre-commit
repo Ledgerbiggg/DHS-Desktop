@@ -24,19 +24,25 @@ fail() {
     exit 1
 }
 
-# -z 用 NUL 分隔文件名，避免路径含空格被拆断
-git diff --cached --name-only -z --diff-filter=ACM \
-| while IFS= read -r -d '' f; do
-    # 路径按扩展名过滤后再逐个校验，避免检查二进制与无关文件
-    printf '%s' "$f" | grep -Eiq "$EXT_FILTER" || continue
+# 文件列表先落临时文件再用重定向读：不能用「cmd | while」写法，
+# 那会让 while 跑在子 shell 里，内部 exit 1 只能退出子 shell 而拦不住提交
+# （首次部署时因此实际放行过一次乱码，已修复）
+tmp=$(mktemp) || exit 1
+trap 'rm -f "$tmp"' EXIT
+
+# 注：极端场景「文件名本身含换行」不处理；含空格的路径按行读取没问题
+git diff --cached --name-only --diff-filter=ACM | grep -Ei "$EXT_FILTER" > "$tmp" || true
+
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
     [ -f "$f" ] || continue
 
     if ! iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1; then
         fail "$f" "不是合法 UTF-8（疑似 GBK 等其他编码写入）"
     fi
     if LC_ALL=C grep -q $'\xEF\xBF\xBD' "$f"; then
-        fail "$f" "包含 U+FFFD 替换字符（�），即已产生的乱码"
+        fail "$f" "包含 U+FFFD 替换字符，即已产生的乱码"
     fi
-done
+done < "$tmp"
 
 exit 0

@@ -48,6 +48,15 @@ public class SettingsViewModel : BindableBase
         set => SetProperty(ref _autoStart, value);
     }
 
+    // —— 静默启动 ——
+    private bool _startHidden;
+    /// <summary>启动时隐藏到托盘，不显示主窗口（开机自启场景常用）</summary>
+    public bool StartHidden
+    {
+        get => _startHidden;
+        set => SetProperty(ref _startHidden, value);
+    }
+
     // —— 快捷键 ——
     private string _hotkeyModifier = "Alt";
     /// <summary>快捷键修饰键</summary>
@@ -133,6 +142,7 @@ public class SettingsViewModel : BindableBase
         // 用字段赋值而非属性，避免构造期就把当前主题重复应用一遍
         _theme = ThemeService.Normalize(_settings.Theme);
         AutoStart = GetAutoStart();
+        StartHidden = _settings.StartHidden;
         HotkeyModifier = _settings.ToggleHotkey.Modifier;
         HotkeyKey = _settings.ToggleHotkey.Key;
 
@@ -148,6 +158,7 @@ public class SettingsViewModel : BindableBase
         _settings.ToggleHotkey.Modifier = HotkeyModifier;
         _settings.ToggleHotkey.Key = HotkeyKey;
         _settings.AutoStart = AutoStart;
+        _settings.StartHidden = StartHidden;
         SetAutoStart(AutoStart);
         _config.SaveSettings(_settings);
         _ = MessageBoxHelper.Info("设置已保存，快捷键立即生效。");

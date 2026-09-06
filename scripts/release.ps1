@@ -20,7 +20,7 @@ $bumpScript = Join-Path $root 'scripts\bump_version.ps1'
 # 重新读取版本号（显式 UTF-8：csproj 含中文注释）
 $csprojPath = Join-Path $root 'Dsh\Dsh.csproj'
 $csproj = Get-Content $csprojPath -Raw -Encoding UTF8
-if ($csproj -match '<Version>([^<]+</Version>') {
+if ($csproj -match '<Version>([^<]+)</Version>') {
     $newVer = $matches[1].Trim()
 } else {
     Write-Host "ERROR: version not found after bump" -ForegroundColor Red

@@ -1,8 +1,8 @@
 #!/bin/sh
 #
 # commit-msg 乱码拦截：防止 AI 工具（弱模型）产出乱码提交消息的强制底线。
-# 检查项：合法 UTF-8 / 无 U+FFFD 替换符 / 无经典 GBK↔UTF-8 乱码子串 / 无零宽与控制字符。
-# 逃生口：确实需要提交非 UTF-8 历史内容时，用 ALLOW_DIRTY_ENCODING=1 git commit ... 跳过。
+# 检查项：合法 UTF-8 / 无 U+FFFD / 无经典乱码子串 / 无零宽与控制字符 / 双重转码乱码字符构成。
+# 逃生口：ALLOW_DIRTY_ENCODING=1 git commit ...（仅限历史遗留编码迁移）。
 #
 
 msgfile="$1"
@@ -27,25 +27,56 @@ if ! iconv -f UTF-8 -t UTF-8 "$msgfile" >/dev/null 2>&1; then
     fail "消息不是合法 UTF-8（疑似混入 GBK 等其他编码字节）"
 fi
 
-# 2. U+FFFD 替换符：说明乱码在写入前就已发生（EF BF BD）
+# 2. U+FFFD 替换符：说明乱码在写入前就已发生
 if LC_ALL=C grep -q $'\xEF\xBF\xBD' "$msgfile"; then
-    fail "消息包含替换字符 U+FFFD（�），即已产生的乱码"
+    fail "消息包含替换字符 U+FFFD，即已产生的乱码"
 fi
 
-# 3. 经典乱码子串：GBK/UTF-8 互转错误的典型产物。
-#    锟斤拷 = 连续 U+FFFD 再编码的结果；鎴/鐨勶/涓嶅 等是常用汉字 UTF-8 字节被按 GBK 解读的结果，
-#    正常中文消息中不会出现这些字符，误报率极低
+# 3. 经典乱码子串：GBK/UTF-8 互转错误的典型产物，正常中文消息不会出现
 if grep -q -e '锟斤拷' -e '锟秸' -e '烫烫' -e '鎴' -e '鐨勶' -e '涓嶅' -e '锛' "$msgfile"; then
     fail "消息包含典型 GBK/UTF-8 乱码子串（如 锟斤拷 等）"
 fi
 
-# 4. 不可见污染字符：模型偶发输出的零宽字符与控制符，肉眼难察觉但属脏数据。
-#    零宽空格 U+200B/E2 80 8B、BOM U+FEFF/EF BB BF、左至右标记 U+200E/E2 80 8E 用字节序列匹配；
-#    控制字符用 tr 兜底：删除允许的字节（\t\n\r 及全部可见字节，UTF-8 多字节序列的高位字节
-#    落在 \200-\377 也一并放行），若还有剩余即存在 C0 控制符（\x00-\x08\x0B\x0C\x0E-\x1F\x7F）
+# 4. 不可见污染字符：零宽空格 U+200B、BOM U+FEFF、左至右标记 U+200E 用字节序列匹配；
+#    控制字符用 tr 兜底：删除允许的字节后若还有剩余，即存在 C0 控制符（\t\n\r 及可见字节放行）
 if LC_ALL=C grep -q -e $'\xE2\x80\x8B' -e $'\xEF\xBB\xBF' -e $'\xE2\x80\x8E' "$msgfile" \
    || LC_ALL=C tr -d '\11\12\15\40-\176\200-\377' < "$msgfile" | LC_ALL=C grep -q .; then
     fail "消息包含零宽字符 / BOM / 控制字符"
+fi
+
+# 5. 双重转码乱码检测（字符构成分析）：
+#    实测案例：PowerShell→git 参数链产生的乱码是「合法 UTF-8 字节」，能骗过第 1 条校验，
+#    但解码后由 生僻汉字 + 竖排符号(U+FE30-FE4F) + 制表图形符(U+2500-U+25FF) 构成，
+#    与正常中文消息（ASCII + 常用汉字 + 常用标点）的字符分布截然不同。
+#    R1: 竖排区/CJK扩展A区字符出现即拦（正常提交消息不会使用）；制表图形区 >=2 拦（①②等带圈数字在 2460-24FF 已放行）
+#    R2: CJK 基本区汉字中，GBK 编码落在二级生僻区（首字节>=0xD8）占比 >40% 判为乱码（留足容错）
+# perl 不存在时跳过本条（Git for Windows 自带 perl，正常环境都在；缺 perl 时宁可降级也不误拦正常提交）
+if command -v perl >/dev/null 2>&1; then
+    result=$(perl -e '
+    use strict; use Encode;
+    my $bytes = do { local $/; <STDIN> };
+    my $text = eval { Encode::decode("UTF-8", $bytes, Encode::FB_CROAK) };
+    exit 0 unless defined $text;
+    my ($vert, $exta, $box, $cjk, $rare) = (0, 0, 0, 0, 0);
+    for my $ch (split //, $text) {
+        my $cp = ord($ch);
+        if ($cp >= 0xFE30 && $cp <= 0xFE4F) { $vert++; }
+        if ($cp >= 0x3400 && $cp <= 0x4DBF) { $exta++; }
+        if ($cp >= 0x2500 && $cp <= 0x25FF && !($cp >= 0x2460 && $cp <= 0x24FF)) { $box++; }
+        next unless $cp >= 0x4E00 && $cp <= 0x9FFF;
+        $cjk++;
+        my $g = eval { Encode::encode("GBK", $ch) };
+        next unless defined $g && length($g) == 2;
+        $rare++ if ord(substr($g, 0, 1)) >= 0xD8;
+    }
+    if ($vert > 0 || $exta > 0) { print "VERT-EXTA"; exit 1; }
+    if ($box >= 2) { print "BOXDRAW"; exit 1; }
+    if ($cjk >= 4 && $rare / $cjk > 0.4) { print "RARE-CJK"; exit 1; }
+    exit 0;
+' < "$msgfile")
+    if [ $? -ne 0 ]; then
+        fail "消息字符构成异常（$result：生僻字/特殊区符号占比异常，疑似 UTF-8/GBK 双重转码乱码）"
+    fi
 fi
 
 exit 0

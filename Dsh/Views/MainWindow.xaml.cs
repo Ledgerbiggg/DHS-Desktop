@@ -70,29 +70,68 @@ public partial class MainWindow : FluentWindow
         Loaded += OnLoaded;
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    /// <summary>运行时基础服务是否已启动（防止 Loaded 与静默启动路径重复执行）</summary>
+    private bool _runtimeStarted;
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // 静默启动时运行时已在后台启动（StartRuntime 幂等短路），这里补 WebView2 初始化；
+        // WebView2 与 dsh 服务启动并行，服务先就绪则地址暂存 _pendingUrl，待其就绪后补导航
+        StartRuntime();
+        _ = InitWebViewAsync();
+    }
+
+    /// <summary>
+    /// 静默启动入口（App.InitializeShell 在 StartHidden 开启时调用）：
+    /// 窗口从头到尾不显示、不渲染。关键点：
+    /// ① 必须在 EnsureHandle 之前压 Visibility=Hidden——WPF 创建 HWND 时若
+    ///    Visibility 为默认 Visible，CreateWindowEx 会带 WS_VISIBLE 样式，
+    ///    窗口创建那一瞬间就显示了（EnsureHandle 只是不调 Show，挡不住这个）；
+    /// ② ShowInTaskbar 同样必须在句柄创建前关掉，否则任务栏图标闪现；
+    /// ③ 句柄创建后 SetWindowText 补标题——窗口未布局时 XAML 的 Title 绑定
+    ///    不求值，HWND 标题为空会让 App.NotifyMainWindow 的 FindWindow 找不到
+    ///    窗口，导致二次启动唤出失效。
+    /// EnsureHandle 会触发 SourceInitialized（消息钩子/主题监听/热键句柄就绪），
+    /// 但不触发 Loaded——WebView2 与首次导航推迟到窗口被呼出时再初始化。
+    /// </summary>
+    internal void StartHiddenToTray()
+    {
+        // 顺序不可颠倒：先压可见性，再创建句柄
+        Visibility = Visibility.Hidden;
+        ShowInTaskbar = false;
+        // 仅创建 HWND，不显示窗口、不触发 Loaded
+        var handle = new WindowInteropHelper(this).EnsureHandle();
+        SetWindowText(handle, App.MainWindowCaption);
+        StartRuntime();
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetWindowText(IntPtr hWnd, string lpString);
+
+    /// <summary>启动运行时基础服务：消息钩子、托盘图标、dsh 后台服务、全局热键、更新检查。
+    /// 显示启动（Loaded）与静默启动共用，幂等</summary>
+    private void StartRuntime()
+    {
+        if (_runtimeStarted) return;
+        _runtimeStarted = true;
+
         try
         {
             // 挂载窗口消息钩子：处理全局热键与单实例唤出
-            _hwndSource = PresentationSource.FromVisual(this) as HwndSource;
+            //（静默启动时窗口尚未布局，FromVisual 可能取不到，回退按句柄查找）
+            _hwndSource = PresentationSource.FromVisual(this) as HwndSource
+                          ?? HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
             _hwndSource?.AddHook(WndProc);
 
             _trayService.Show();
-
-            // WebView2 运行时初始化与 dsh 服务启动并行，缩短首屏等待；
-            // 服务就绪后经 NavigateRequested 回调导航，若此刻 WebView2 尚未就绪则暂存地址
-            var webViewReady = WebView.EnsureCoreWebView2Async();
-            _ = _vm.StartServiceAsync();
-
-            await webViewReady;
-            if (_pendingUrl is not null)
-                Navigate(_pendingUrl);
         }
         catch (Exception ex)
         {
-            LoggerHelper.Error("OnLoaded 加载异常", ex);
+            LoggerHelper.Error("启动基础服务异常", ex);
         }
+
+        // dsh 服务启动不依赖窗口可见，尽早拉起
+        _ = _vm.StartServiceAsync();
 
         // 热键注册整体容错，绝不阻塞界面
         try { RegisterHotkey(); }
@@ -100,6 +139,21 @@ public partial class MainWindow : FluentWindow
 
         // 启动时静默检查更新（不阻塞 UI）
         _ = _vm.CheckUpdateAtStartupAsync();
+    }
+
+    /// <summary>初始化 WebView2 并补上暂存的导航地址</summary>
+    private async Task InitWebViewAsync()
+    {
+        try
+        {
+            await WebView.EnsureCoreWebView2Async();
+            if (_pendingUrl is not null)
+                Navigate(_pendingUrl);
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Error("WebView2 初始化异常", ex);
+        }
     }
 
     /// <summary>导航到指定地址；WebView2 尚未就绪时暂存，待初始化完成后补上</summary>
@@ -121,17 +175,13 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    /// <summary>窗口句柄创建后：若配置了启动到托盘，直接隐藏</summary>
+    /// <summary>窗口句柄创建后挂上系统主题监听（跟随系统模式）</summary>
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
-        // 句柄就绪后才能挂上系统主题监听（跟随系统模式），启动时补上这一环
+        // 句柄就绪后才能挂上系统主题监听（跟随系统模式），启动时补上这一环。
+        // 静默启动不再在此隐藏窗口——那条"先显示再隐藏"的路径会闪屏，
+        // 已改为 App.InitializeShell 静默路径根本不调用 Show（见 StartHiddenToTray）
         _themeService.Apply(_settings.Theme, this);
-
-        if (_settings.StartHidden)
-        {
-            Visibility = Visibility.Hidden;
-            ShowInTaskbar = false;
-        }
     }
 
     /// <summary>窗口消息处理：WM_HOTKEY + 单实例唤出</summary>

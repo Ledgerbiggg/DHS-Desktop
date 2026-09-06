@@ -38,6 +38,11 @@
                 <TextBlock Style="{StaticResource FormLabelStyle}" Text="开机自启" Margin="0,20,0,8" />
                 <CheckBox Content="开机自动启动 DeepSeek" IsChecked="{Binding AutoStart}" />
 
+                <!-- 静默启动 -->
+                <TextBlock Style="{StaticResource FormLabelStyle}" Text="静默启动" Margin="0,12,0,8" />
+                <CheckBox Content="启动时隐藏到托盘，不显示主窗口"
+                          IsChecked="{Binding StartHidden}" />
+
                 <!-- 快捷键设置 -->
                 <TextBlock Style="{StaticResource FormLabelStyle}" Text="快捷键" Margin="0,20,0,8" />
                 <TextBlock Style="{StaticResource FormHelpStyle}"
