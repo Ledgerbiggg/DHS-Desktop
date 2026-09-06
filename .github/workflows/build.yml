@@ -1,0 +1,89 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Read version from csproj
+        id: ver
+        shell: pwsh
+        run: |
+          $csproj = Get-Content "Dsh/Dsh.csproj" -Raw
+          if ($csproj -match '<Version>([^<]+)</Version>') {
+            $version = $matches[1].Trim()
+            echo "version=$version" >> $env:GITHUB_OUTPUT
+            Write-Host "Version: $version"
+          } else {
+            Write-Host "ERROR: <Version> not found in csproj"
+            exit 1
+          }
+
+      - name: Check if release already exists
+        id: check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v${{ steps.ver.outputs.version }}"
+          $exists = gh release view "$tag" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists, skipping."
+            echo "skip=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "skip=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Extract release notes
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $vj = Get-Content "Dsh/version.json" -Raw | ConvertFrom-Json
+          $notes = $vj.notes
+          if (-not $notes) { $notes = "Release v${{ steps.ver.outputs.version }}" }
+          $notes | Out-File -FilePath "release_notes.txt" -Encoding:UTF8 -NoNewline
+
+      - name: Publish (self-contained, single-file)
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          dotnet publish Dsh/Dsh.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o _publish
+
+      - name: Build installer (Inno Setup)
+        if: steps.check.outputs.skip != 'true'
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: installer.iss
+          options: /DMyAppVersion=${{ steps.ver.outputs.version }}
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v${{ steps.ver.outputs.version }}"
+          $installer = Get-ChildItem "package\Dsh-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Host "ERROR: Installer not found"
+            exit 1
+          }
+          gh release create "$tag" "$($installer.FullName)" `
+            --title "Dsh ${{ steps.ver.outputs.version }}" `
+            --notes-file "release_notes.txt"
+          Write-Host "Release $tag created successfully."

@@ -1,0 +1,23 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.userprefs
+
+## 构建产物
+_publish/
+package/
+*.exe
+*.dll
+*.pdb
+
+## IDE
+.idea/
+*.swp
+*~
+
+## 日志
+logs/
+*.log
