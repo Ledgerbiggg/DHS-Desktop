@@ -174,13 +174,27 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    /// <summary>窗口句柄创建后挂上系统主题监听（跟随系统模式）</summary>
+    /// <summary>窗口句柄创建后挂上系统主题监听（跟随系统模式），并子类化窗口过程修复顶部缩放</summary>
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         // 句柄就绪后才能挂上系统主题监听（跟随系统模式），启动时补上这一环。
         // 静默启动不再在此隐藏窗口——那条"先显示再隐藏"的路径会闪屏，
         // 已改为 App.InitializeShell 静默路径根本不调用 Show（见 StartHiddenToTray）
         _themeService.Apply(_settings.Theme, this);
+
+        // 子类化窗口过程：处理顶部边缘缩放（见 SubclassWndProc 注释）。
+        // 正常显示与静默启动（EnsureHandle）都会经过这里，两条路径统一覆盖
+        var hwnd = new WindowInteropHelper(this).Handle;
+        try
+        {
+            _subclassProc = SubclassWndProc;
+            _oldWndProc = SetWindowLongPtrSafe(hwnd, GwlWndProc,
+                Marshal.GetFunctionPointerForDelegate(_subclassProc));
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Error("子类化窗口过程失败（顶部缩放修复不生效，其余功能不受影响）", ex);
+        }
     }
 
     /// <summary>窗口消息处理：WM_HOTKEY + 单实例唤出</summary>
@@ -282,6 +296,16 @@ public partial class MainWindow : FluentWindow
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
         SaveWindowState();
+        // 还原子类化窗口过程，避免窗口销毁期间消息进入已失效委托
+        if (_oldWndProc != IntPtr.Zero)
+        {
+            try
+            {
+                SetWindowLongPtrSafe(new WindowInteropHelper(this).Handle, GwlWndProc, _oldWndProc);
+            }
+            catch { /* 还原失败随窗口销毁无实际影响 */ }
+            _oldWndProc = IntPtr.Zero;
+        }
         _hwndSource?.RemoveHook(WndProc);
         _hotkeyManager.Dispose();
         // 真正退出时终止托管的 dsh web 服务，避免 3080 端口残留
@@ -324,4 +348,88 @@ public partial class MainWindow : FluentWindow
         _dshHost.Stop();
         App.RequestShutdown();
     }
+
+    #region 顶部边缘缩放（子类化窗口过程）
+
+    /// <summary>非客户区命中测试消息</summary>
+    private const int WmNcHitTest = 0x0084;
+
+    /// <summary>命中结果常量：顶边 / 左上角 / 右上角</summary>
+    private const int HtTop = 12, HtTopLeft = 13, HtTopRight = 14;
+
+    /// <summary>窗口过程替换索引</summary>
+    private const int GwlWndProc = -4;
+
+    /// <summary>顶部缩放边缘厚度（DIP），与内容区左/右/下留出的 8px 缩放缝保持一致</summary>
+    private const double TopResizeEdge = 8;
+
+    private delegate IntPtr WndProcDelegate(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>子类化过程委托引用：必须持有防止被 GC 回收导致崩溃</summary>
+    private WndProcDelegate? _subclassProc;
+
+    /// <summary>原窗口过程地址</summary>
+    private IntPtr _oldWndProc;
+
+    /// <summary>子类化窗口过程：先于 WPF 的 HwndSource hook 链收到消息。
+    /// 顶部无法缩放的根因：WPF-UI 的 TitleBar 接管整条标题栏，WindowChrome 的
+    /// 元素命中检查优先于 resize 边框判定，顶边（含边缘几像素）都返回 HTCLIENT，
+    /// 永远轮不到缩放命中（左/右/底边无 TitleBar 遮挡所以正常）。
+    /// 且 WPF-UI 在 HwndSource 的 hook 链中注册在先、先执行并标记 handled，
+    /// 普通的 AddHook 收不到 WM_NCHITTEST，只能在子类化层面更早拦截。
+    /// 此处顶边 8px 返回 HTTOP 系列恢复上下缩放</summary>
+    private IntPtr SubclassWndProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
+    {
+        if (msg == WmNcHitTest && WindowState == WindowState.Normal && ResizeMode != ResizeMode.NoResize)
+        {
+            try
+            {
+                if (GetWindowRect(hWnd, out var rc))
+                {
+                    // 按 DPI 把边缘厚度换算为物理像素，与实际命中区域一致
+                    var edge = (int)Math.Ceiling(TopResizeEdge * GetDpiForWindow(hWnd) / 96.0);
+                    // lParam 低/高 16 位为鼠标屏幕像素坐标（有符号）
+                    var relX = (short)(lParam.ToInt64() & 0xFFFF) - rc.left;
+                    var relY = (short)((lParam.ToInt64() >> 16) & 0xFFFF) - rc.top;
+                    if (relY <= edge)
+                    {
+                        if (relX <= edge) return (IntPtr)HtTopLeft;
+                        if (relX >= rc.right - rc.left - edge) return (IntPtr)HtTopRight;
+                        return (IntPtr)HtTop;
+                    }
+                }
+            }
+            catch { /* 异常时交回原过程按默认逻辑处理 */ }
+        }
+        return CallWindowProc(_oldWndProc, hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>跨位数安全的 SetWindowLong(Ptr)：32 位进程无 SetWindowLongPtr 导出</summary>
+    private static IntPtr SetWindowLongPtrSafe(IntPtr hWnd, int nIndex, IntPtr value)
+        => IntPtr.Size == 8
+            ? SetWindowLongPtr64(hWnd, nIndex, value)
+            : new IntPtr(SetWindowLong32(hWnd, nIndex, value.ToInt32()));
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
+    private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int left, top, right, bottom;
+    }
+
+    #endregion
 }
