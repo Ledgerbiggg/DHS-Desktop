@@ -2,15 +2,13 @@
 # .NET 9 + WPF + Prism.Unity + WPF-UI 4.0 + WebView2
 #
 # 常用:
-#   make dev    - 杀进程 + 构建(Debug) + 运行
-#   make watch  - 热部署：启动后监听源码变化，自动重建并重启（按 Q 退出）
-#   make build  - 构建解决方案
-#   make dist   - 本地打包安装包（需 Inno Setup）
+#   make dev     - 杀进程 + 构建(Debug) + 运行
+#   make watch   - 热部署：启动后监听源码变化，自动重建并重启（按 Q 退出）
+#   make build   - 构建解决方案
+#   make dist    - 本地打包安装包（需 Inno Setup）
 #   make release - 发布（云端出包）：升版本 + 写 notes + 提交 + 推送
-#   make bump    - 仅升版本号 +1（patch 默认）
-#   make clean  - 清理 bin/obj
-#   make config - 打开配置目录 %AppData%\Dsh
-#   make logs   - 打开日志目录
+#   make config  - 打开配置目录 %AppData%\Dsh
+#   make logs    - 打开日志目录
 
 SLN     := Dsh.sln
 PRJ     := Dsh\Dsh.csproj
@@ -28,11 +26,6 @@ NOTES    ?= "minor fixes"
 kill:
 	@echo "[kill] 清理残留 Dsh 进程..."
 	@taskkill /F /IM $(APP_NAME) 2>nul || echo "(无运行实例)"
-
-.PHONY: restore
-restore:
-	@echo "[restore] 还原 NuGet 依赖..."
-	dotnet restore $(SLN)
 
 .PHONY: build
 build: kill
@@ -58,13 +51,6 @@ dev: build run
 watch:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev_watch.ps1
 
-.PHONY: clean
-clean: kill
-	@echo "[clean] 清理 bin/obj..."
-	@if exist "Dsh\bin" rmdir /S /Q "Dsh\bin"
-	@if exist "Dsh\obj" rmdir /S /Q "Dsh\obj"
-	@echo "[clean] 完成"
-
 .PHONY: publish
 publish:
 	@echo "[publish] 自包含发布到 _publish/ (win-x64)..."
@@ -79,11 +65,6 @@ dist: publish
 		echo "[dist] 未找到 ISCC，请修改 Makefile 中的 ISCC 路径"; \
 	)
 	@echo "[dist] 安装包已生成 package/Dsh-Setup-*.exe"
-
-.PHONY: bump
-bump:
-	@echo "[bump] 递增版本号..."
-	@powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bump_version.ps1
 
 .PHONY: release
 release:
@@ -113,10 +94,7 @@ help:
 	@echo "  build   - 构建解决方案（Debug）"
 	@echo "  run     - 启动主程序（需先 build）"
 	@echo "  kill    - 杀掉残留 Dsh 进程"
-	@echo "  clean   - 清理 bin/obj"
-	@echo "  publish - 自包含发布到 _publish/"
 	@echo "  dist    - 打包安装包（需 Inno Setup）"
-	@echo "  bump    - 升版本号 +1（patch 默认）"
 	@echo "  release - 发布（云端出包）：升版本 + 写 notes + 提交 + 推送"
 	@echo "  config  - 打开 %AppData%\Dsh 配置目录"
 	@echo "  logs    - 打开日志目录"
